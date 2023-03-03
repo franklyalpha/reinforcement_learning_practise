@@ -1,0 +1,26 @@
+policy gradient: 
+directly apply update to policies via the gradient calculated from expectation of reward. 
+
+always realize that for any reinforcement learning algorithms, the procedures would be performed as follows: 
+1: generate samples
+2: fit the model for those samples; 
+3: update models.
+
+And above is a recursive process. 
+
+# note to the package gymnasium: 
+- this is a forked package from OpenAI's gym package (which was also being installed on my computer, but due to it's using mujoco-py package, and I was facing troubles installing that, I quit using "gym"), which requires "mujoco" package, and seems like the environment to be working properly. 
+- https://pypi.org/project/gymnasium/ provides an easy-to-use example for acquiring samples from simulated environment. 
+
+# policy gradient details
+first need to calculate the gradient. 
+realizing if env.action_space() is accessible, it's possible to define the output configurations of models for taking in some things (either previous states or other information of the environment) and use models to predict an action, which belongs to action space. 
+# problem of calculating the gradient: 
+the gradient is calculated via reward, and differentiation is calculated via reward and theta/estimated policy. 
+    realizing "pi" in the formula perhaps indicates likelihood?
+    https://colab.research.google.com/github/huggingface/deep-rl-class/blob/main/unit5/unit5.ipynb#scrollTo=jGdhRSVrOV4K 
+    the above tutorial gives the model with likelihood calculation: 
+    acquiring the softmax results as the probability of taking one action, and use that to fit a Categorial distribution, which then samples an action. 
+
+The main part of implementation is perhaps training of policy gradient. 
+
