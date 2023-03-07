@@ -127,7 +127,8 @@ if __name__ == "__main__":
     # You should change them if you are just copy/paste the code
     algo_name = Path(__file__).stem.split("_")[0].upper()
     run_dir = Path(
-        Path(__file__).parent.resolve().parents[1], "runs", f"{args.env_id}__{algo_name}__{date}"
+        Path(__file__).parent.resolve().parents[1], "runs"
+        # , f"{args.env_id}__{algo_name}__{date}"
     )
 
     # Initialize wandb if needed (https://wandb.ai/)
