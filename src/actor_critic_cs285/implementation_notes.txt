@@ -1,0 +1,52 @@
+always realize that for any reinforcement learning algorithms, the procedures would be performed as follows:
+1: generate samples
+2: fit the model for those samples; 
+3: update models.
+
+And above is a recursive process. 
+
+# note to the package gymnasium: 
+- this is a forked package from OpenAI's gym package (which was also being installed on my computer, but due to it's using mujoco-py package, and I was facing troubles installing that, I quit using "gym"), which requires "mujoco" package, and seems like the environment to be working properly. 
+- https://pypi.org/project/gymnasium/ provides an easy-to-use example for acquiring samples from simulated environment. 
+
+# actor critic details:
+first of all need to implement Q, V and A function for representing expectations on integrated values.
+Realizing this is a recursive process.
+After checking the method of "one_trajectory" directly inherited from "policy_gradient.py", I realized the
+returned values still require those sampled, rewards, log_probs and trajectories
+
+It's possible to directly starting with Q, V, and A's implementations. Starting with Q value function. Realizing
+the process of constantly applying expectation calculation over actions are recursive, and expectations are
+actually taken over actions?
+
+below could be considered as a good resource for evaluating the value function.
+https://github.com/chengxi600/RLStuff/blob/master/Actor-Critic/Actor-Critic_TD_Lambda_Forward.ipynb
+    pay more attention on "get_Nstep_returns" method, as it provides critical steps for evaluating the
+    value function.
+
+
+And this article provides corresponding model updating methods:
+https://medium.com/geekculture/actor-critic-implementing-actor-critic-methods-82efb998c273
+
+checking over slides reveals, value functions at each states are being predicted by another neural network. Thus
+no need to consider Q function, just try to fit with "V" function which takes in a state and produces a reward.
+Need to check how to fit "V" function.
+
+There are several ways of implementing the value function. One simple one is just taking
+current estimated value, and compare with current reward + estimated value of follow-up state.
+In slides, this is referred as "bootstrapped estimate"
+But the best solution we should consider is to try comparing with ground truth, although sometimes this means
+more samples are required to be collected.
+
+According to slides, should adopt Monte Carlo estimation, and calculate the loss function as following:
+sum up the rewards at each time step using reward-to-go method (acquire GT data), and then find the loss
+of value function as the norm of vector across different time-steps' reward-to-go (dimension of time),
+and then sum up along the dimension of samples to get final scalar loss to value function.
+
+Therefore, can consider re-using reward-to-go function for calculating GT reward; but this time, instead of
+using it to train policy network, reward-to-go will be approximated by value function, which then
+jointly work with policy network to formulate the optimal action.
+This perhaps means policy net need to have value net initialized?
+
+Need to further investigate the problem of gradient explosion, possibly due to
+unnormalized value net and policy net loss.

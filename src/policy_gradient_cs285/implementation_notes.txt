@@ -22,5 +22,7 @@ the gradient is calculated via reward, and differentiation is calculated via rew
     the above tutorial gives the model with likelihood calculation: 
     acquiring the softmax results as the probability of taking one action, and use that to fit a Categorial distribution, which then samples an action. 
 
-The main part of implementation is perhaps training of policy gradient. 
+The main part of implementation is perhaps training of policy gradient.
+
+still need to handle continuous actions' cases.
 
