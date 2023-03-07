@@ -26,7 +26,7 @@ value_net.to(device)
 optimizer_policy = optim.Adam(policy_net.parameters(), lr=0.001)
 optimizer_value = optim.Adam(value_net.parameters(), lr=0.001)
 
-epochs, batch_size, trajectory_time = 200, 10, 200
+epochs, batch_size, trajectory_time = 200, 40, 100
 reward_decay_factor = 0.99
 
 

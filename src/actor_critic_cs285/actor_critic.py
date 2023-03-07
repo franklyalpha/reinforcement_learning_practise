@@ -33,7 +33,6 @@ def one_trajectory(env, trajectory_time, policy_net, value_net, device):
             action_numpy)
         rewards.append(reward)
         prev_state = torch.from_numpy(updated_state).to(device)
-        # TODO: check assumption that approximate_reward is a Torch Tensor with shape [1], and is in "device"
         approximate_reward = value_net(prev_state)
         approximate_rewards.append(approximate_reward)
         if terminated:
@@ -46,16 +45,19 @@ def one_trajectory(env, trajectory_time, policy_net, value_net, device):
 
 
 def reward_to_go_calculation(reward_decay_factor, trajectory_time, reward_record):
-    reward_decay_tensor = torch.from_numpy(np.array([reward_decay_factor ** i for i in range(trajectory_time)])[None])
+    reward_decay_tensor = torch.from_numpy(np.array([reward_decay_factor ** i
+                                                     for i in range(trajectory_time)])[None])
     # now perform reward cum_sum;
     reward_to_go = torch.zeros_like(reward_record)
     for i in range(trajectory_time - 1, -1, -1):
-        reward_to_go[:, i] = torch.sum(reward_decay_tensor[:, :trajectory_time - i] * reward_record[:, i:], dim=1)
+        reward_to_go[:, i] = torch.sum(reward_decay_tensor[:, :trajectory_time - i]
+                                       * reward_record[:, i:], dim=1)
     return reward_to_go
 
 
 def train_networks(training_configs, device, env, policy_net, value_net, optimizer_value, optimizer_policy):
     epochs, batch_size, trajectory_time, reward_decay_factor = training_configs
+    best_reward = -99999
     for training_epoch in range(epochs):
         log_probs_record, reward_record, approximate_reward_record, \
         states_record = one_epoch_data(batch_size, device, env,
@@ -74,17 +76,24 @@ def train_networks(training_configs, device, env, policy_net, value_net, optimiz
 
         # now start fitting policy net
         # first calculate A value;
-        a_value = value_net(states_record.to(device)).flatten(-2, -1)
+        a_value = value_net(states_record.to(device)).flatten(-2, -1) # use updated value_net to acquire new reward
+                                    # for each sampled states
         a_value = reward_record.to(device) + torch.concatenate((a_value[:, 1:],
                                     torch.zeros([batch_size, 1]).to(device)), dim=1) - a_value
         policy_net_loss = torch.sum(torch.cat(log_probs_record) * a_value)
         optimizer_policy.zero_grad()
         policy_net_loss.backward()
         optimizer_policy.step()
+
+        # training output
+        mean_reward = torch.mean(reward_record)
+        if mean_reward > best_reward:
+            best_reward = mean_reward
         print("epoch {} with reward {}; "
               "policy_net_loss: {}, "
               "value_net_loss: {}".format(training_epoch, torch.mean(reward_record),
                                           policy_net_loss, value_net_loss))
+    print(best_reward)
 
 
 def one_epoch_data(batch_size, device, env, policy_net, value_net, trajectory_time):
@@ -164,7 +173,8 @@ class ValueNetwork(nn.Module):
     def __init__(self, observation_shape, ):
         super().__init__()
         self.observation_shape = observation_shape
-        self.network = nn.Linear(observation_shape, 1) # generate an approximated value for current state,
+        self.input_layer = nn.Linear(observation_shape, observation_shape * 2)
+        self.output_layer = nn.Linear(observation_shape * 2, 1) # generate an approximated value for current state,
                             # where the value is a scalar
 
     def forward(self, state):
@@ -174,7 +184,8 @@ class ValueNetwork(nn.Module):
         :param state:
         :return:
         """
-        return self.network(state)
+        x = self.input_layer(state)
+        return self.output_layer(x)
 
 
 class PolicyNetwork(nn.Module):
@@ -183,7 +194,9 @@ class PolicyNetwork(nn.Module):
         super().__init__()
         self.observation_shape = observation_shape
         self.action_shape = action_shape
-        self.network = nn.Linear(observation_shape, action_shape)
+        self.input_layer = nn.Linear(observation_shape, observation_shape * 2)
+        self.intermediate_layer = nn.Linear(observation_shape * 2, action_shape * 2)
+        self.output_layer = nn.Linear(action_shape * 2, action_shape)
 
     def forward(self, state):
         """
@@ -192,7 +205,18 @@ class PolicyNetwork(nn.Module):
         :param state:
         :return:
         """
-        return self.network(state)
+        x = self.input_layer(state)
+
+        #relu activation
+        x = nn.ReLU()(x)
+
+        x = self.intermediate_layer(x)
+
+        x = nn.ReLU()(x)
+
+        #actions
+        actions = self.output_layer(x)
+        return actions
 
     def sample_discrete_action(self, state):
         """
@@ -202,7 +226,7 @@ class PolicyNetwork(nn.Module):
         :return:
         """
         # first use network to predict a likelihood for each action.
-        action_prob = nn.Softmax()(self.network(state))
+        action_prob = nn.Softmax()(self.forward(state))
         action_distribution = Categorical(action_prob)
         sampled_action = action_distribution.sample()
         log_probab = action_distribution.log_prob(
@@ -220,7 +244,7 @@ class PolicyNetwork(nn.Module):
         # use ceil and floor to normalize the action values.
         standard_conversion = nn.Sigmoid(
         )  # might need to be replaced to other methods when required
-        output_action = standard_conversion(self.network(state)).to("cpu")
+        output_action = standard_conversion(self.forward(state)).to("cpu")
         normalized_actions = floor + output_action * (
                 ceil - floor)  # realize Sigmoid ranges from 0 to 1;
         return normalized_actions  # perhaps also need to add modifications for likelihood or loss calculation.
@@ -231,161 +255,3 @@ def get_exploration_prob(args, step):
     return args.eps_end + (args.eps_start - args.eps_end) * math.exp(
         -1.0 * step / args.eps_decay)
 
-# if __name__ == "__main__":
-#     args = parse_args()
-#
-#     date = str(datetime.now().strftime("%d-%m_%H:%M"))
-#     # These variables are specific to the repo "rl-gym-zoo"
-#     # You should change them if you are just copy/paste the code
-#     algo_name = Path(__file__).stem.split("_")[0].upper()
-#     run_dir = Path(
-#         Path(__file__).parent.resolve().parents[1], "runs"
-#         # , f"{args.env_id}__{algo_name}__{date}"
-#     )
-#
-#     # Initialize wandb if needed (https://wandb.ai/)
-#
-#     # Create tensorboard writer and save hyperparameters
-#     writer = SummaryWriter(run_dir)
-#     writer.add_text(
-#         "hyperparameters",
-#         "|param|value|\n|-|-|\n%s" %
-#         ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
-#     )
-#
-#     # Set seed for reproducibility
-#     if args.seed > 0:
-#         random.seed(args.seed)
-#         np.random.seed(args.seed)
-#         torch.manual_seed(args.seed)
-#
-#     # Create vectorized environment
-#     env = gym.vector.SyncVectorEnv([make_env(args.env_id)])
-#
-#     # Metadata about the environment
-#     obversation_shape = env.single_observation_space.shape
-#     action_shape = env.single_action_space.n
-#
-#     # Create the networks and the optimizer
-#     policy_net = PolicyNetwork(args, obversation_shape, action_shape)
-#
-#     start_time = time.process_time()
-#
-#     # Main loop
-#     for global_step in tqdm(range(args.total_timesteps)):
-#
-#         with torch.no_grad():
-#             # Exploration or intensification
-#             exploration_prob = get_exploration_prob(args, global_step)
-#
-#             # Log exploration probability
-#             writer.add_scalar("rollout/eps_threshold", exploration_prob,
-#                               global_step)
-#
-#             if np.random.rand() < exploration_prob:
-#                 # Exploration
-#                 action = torch.randint(action_shape, (1, )).to(args.device)
-#             else:
-#                 # Intensification
-#                 action = torch.argmax(policy_net(state), dim=1)
-#
-#         # Perform action
-#         next_state, reward, terminated, truncated, infos = env.step(
-#             action.cpu().numpy())
-#
-#         # Convert transition to torch tensors
-#         next_state = torch.from_numpy(next_state).to(args.device).float()
-#         reward = torch.from_numpy(reward).to(args.device).float()
-#         flag = torch.from_numpy(np.logical_or(terminated, truncated)).to(
-#             args.device).float()
-#
-#         # Store transition in the replay buffer
-#         # replay_buffer.push(state, action, reward, next_state, flag)
-#
-#         state = next_state
-#
-#         # Log episodic return and length
-#         if "final_info" in infos:
-#             info = infos["final_info"][0]
-#
-#             log_episodic_returns.append(info["episode"]["r"])
-#             writer.add_scalar("rollout/episodic_return", info["episode"]["r"],
-#                               global_step)
-#             writer.add_scalar("rollout/episodic_length", info["episode"]["l"],
-#                               global_step)
-#
-#         # Perform training step
-#         if global_step > args.learning_start:
-#             if not global_step % args.train_frequency:
-#                 # Sample a batch from the replay buffer
-#                 states, actions, rewards, next_states, flags = replay_buffer.sample(
-#                 )
-#
-#                 # Compute TD error
-#                 td_predict = policy_net(states).gather(1, actions).squeeze()
-#
-#                 # Compute TD target
-#                 with torch.no_grad():
-#                     # Double Q-Learning
-#                     action_by_qvalue = policy_net(next_states).argmax(
-#                         1).unsqueeze(-1)
-#                     max_q_target = target_net(next_states).gather(
-#                         1, action_by_qvalue).squeeze()
-#
-#                 td_target = rewards + (1.0 - flags) * args.gamma * max_q_target
-#
-#                 # Compute loss
-#                 loss = mse_loss(td_predict, td_target)
-#
-#                 # Update policy network
-#                 optimizer.zero_grad()
-#                 loss.backward()
-#                 optimizer.step()
-#
-#                 # Update target network (soft update)
-#                 for param, target_param in zip(policy_net.parameters(),
-#                                                target_net.parameters()):
-#                     target_param.data.copy_(args.tau * param.data +
-#                                             (1 - args.tau) * target_param.data)
-#
-#                 # Log training metrics
-#                 writer.add_scalar("train/loss", loss, global_step)
-#
-#         writer.add_scalar(
-#             "rollout/SPS",
-#             int(global_step / (time.process_time() - start_time)), global_step)
-#
-#     # Average of episodic returns (for the last 5% of the training)
-#     indexes = int(len(log_episodic_returns) * 0.05)
-#     avg_final_rewards = np.mean(log_episodic_returns[-indexes:])
-#     print(
-#         f"Average of the last {indexes} episodic returns: {round(avg_final_rewards, 2)}"
-#     )
-#     writer.add_scalar("rollout/avg_final_rewards", avg_final_rewards,
-#                       global_step)
-#
-#     # Close the environment
-#     env.close()
-#     writer.close()
-#
-#
-#     # Capture video of the policy
-#     if args.capture_video:
-#         print(f"Capturing videos and saving them to {run_dir}/videos ...")
-#         env_test = gym.vector.SyncVectorEnv(
-#             [make_env(args.env_id, capture_video=True)])
-#         state, _ = env_test.reset()
-#         count_episodes = 0
-#
-#         while count_episodes < 10:
-#             with torch.no_grad():
-#                 state = torch.from_numpy(state).to(args.device).float()
-#                 action = torch.argmax(policy_net(state), dim=1).cpu().numpy()
-#
-#             state, _, terminated, truncated, _ = env_test.step(action)
-#
-#             if terminated or truncated:
-#                 count_episodes += 1
-#
-#         env_test.close()
-#         print("Done!")
