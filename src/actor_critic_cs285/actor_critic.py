@@ -37,6 +37,7 @@ def one_trajectory(env, trajectory_time, policy_net, value_net, device):
         approximate_rewards.append(approximate_reward)
         if terminated:
             torch.from_numpy(env.reset()[0]).to(device)
+            # print("terminated at time {}".format(i))
     log_probs_tensor = torch.cat(log_probs)
     approximate_rewards = torch.cat(approximate_rewards)
         # stack automatically adds a new dimension, and preserves gradient
@@ -69,7 +70,7 @@ def train_networks(training_configs, device, env, policy_net, value_net, optimiz
         # the reward would be much higher than 1, due to accumulation. Would this lead to problems of the network?
         # loss for approximation models will be calculated as normalized values;
 
-        value_net_loss = torch.sum(torch.linalg.norm(gt_reward_record - approximate_reward_record, dim=1))
+        value_net_loss = torch.mean(torch.linalg.norm(gt_reward_record - approximate_reward_record, dim=1))
         optimizer_value.zero_grad()
         value_net_loss.backward()
         optimizer_value.step()
@@ -80,7 +81,7 @@ def train_networks(training_configs, device, env, policy_net, value_net, optimiz
                                     # for each sampled states
         a_value = reward_record.to(device) + torch.concatenate((a_value[:, 1:],
                                     torch.zeros([batch_size, 1]).to(device)), dim=1) - a_value
-        policy_net_loss = torch.sum(torch.cat(log_probs_record) * a_value)
+        policy_net_loss = torch.sum((-1) * (torch.cat(log_probs_record)) * a_value)
         optimizer_policy.zero_grad()
         policy_net_loss.backward()
         optimizer_policy.step()
@@ -89,10 +90,11 @@ def train_networks(training_configs, device, env, policy_net, value_net, optimiz
         mean_reward = torch.mean(reward_record)
         if mean_reward > best_reward:
             best_reward = mean_reward
-        print("epoch {} with reward {}; "
-              "policy_net_loss: {}, "
-              "value_net_loss: {}".format(training_epoch, torch.mean(reward_record),
-                                          policy_net_loss, value_net_loss))
+        if mean_reward > 0 or training_epoch % 100 == 0:
+            print("epoch {} with reward {}; "
+                  "policy_net_loss: {}, "
+                  "value_net_loss: {}".format(training_epoch, torch.mean(reward_record),
+                                              policy_net_loss, value_net_loss))
     print(best_reward)
 
 
@@ -138,34 +140,6 @@ def parse_args():
         "cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
 
     return args
-
-
-# def make_env(env_id, capture_video=False):
-#
-#     def thunk():
-#
-#         if capture_video:
-#             env = gym.make(env_id, render_mode="rgb_array")
-#             env = gym.wrappers.RecordVideo(
-#                 env=env,
-#                 video_folder=f"{run_dir}/videos/",
-#                 episode_trigger=lambda x: x,
-#                 disable_logger=True,
-#             )
-#         else:
-#             env = gym.make(env_id)
-#         env = gym.wrappers.RecordEpisodeStatistics(env)
-#         env = gym.wrappers.FlattenObservation(env)
-#         env = gym.wrappers.NormalizeObservation(env)
-#         env = gym.wrappers.TransformObservation(
-#             env, lambda obs: np.clip(obs, -10, 10))
-#         env = gym.wrappers.NormalizeReward(env)
-#         env = gym.wrappers.TransformReward(
-#             env, lambda reward: np.clip(reward, -10, 10))
-#
-#         return env
-#
-#     return thunk
 
 
 class ValueNetwork(nn.Module):

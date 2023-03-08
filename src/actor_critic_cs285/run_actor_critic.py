@@ -26,7 +26,11 @@ value_net.to(device)
 optimizer_policy = optim.Adam(policy_net.parameters(), lr=0.001)
 optimizer_value = optim.Adam(value_net.parameters(), lr=0.001)
 
-epochs, batch_size, trajectory_time = 200, 40, 100
+epochs, batch_size, trajectory_time = 10000, 1, 80 # realizing batch size of 5 is already terrible enough.
+                                        # sampling one trajectory perhaps is always more preferred,
+                                        # according to training results.
+                                        # perhaps next time should only consider sampling only one trajectory,
+                                        # and perform immediate updates.
 reward_decay_factor = 0.99
 
 
