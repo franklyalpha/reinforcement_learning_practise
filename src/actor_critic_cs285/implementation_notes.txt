@@ -52,3 +52,5 @@ Need to further investigate the problem of gradient explosion, possibly due to
 unnormalized value net and policy net loss.
 another problem perhaps could also be, since the model has no idea whether a terminal state is reached, the predicted
 reward might be incorrect.
+
+use MSE loss to fit Value network!!!
