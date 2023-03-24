@@ -2,6 +2,9 @@ import argparse
 import math
 import random
 import time
+from collections import deque, namedtuple
+from datetime import datetime
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
@@ -10,13 +13,10 @@ from torch import nn, optim
 from torch.nn.functional import mse_loss, cross_entropy
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
-from torch.distributions import Categorical, Normal
+from torch.distributions import Categorical
 
 
-# from collections import deque, namedtuple
-# from datetime import datetime
-# from pathlib import Path
-
+# run below lines for initializing python console.
 def sample_datapoints(target_net, sample_data_count, replay_buffer, env, device):
     states, _ = env.reset()
     for i in range(sample_data_count):
@@ -72,6 +72,49 @@ def reward_to_go_calculation(reward_decay_factor, trajectory_time, reward_record
     return reward_to_go
 
 
+def train(dynamics_training_params, policy_training_params, target_net, policy_net, optimizer_policy,
+          dynamics_net, best_dynamics_net, optimizer_dynamics):
+    dynamics_epoch, batch_size, sample_times, rollout_times, \
+        rollout_length, env, device = dynamics_training_params
+    lowest_dynamic_loss = 99999
+    for i in range(dynamics_epoch):
+        env_sample_buffer = ReplayBuffer(batch_size)
+        # first sample a set of data and store in a replay_buffer.
+        sample_datapoints(target_net, sample_times, env_sample_buffer, env, device)
+    
+        # after that use sampled replay buffer data to update dynamics model, using all the data from
+        env_buffer_num_batch = 1 + len(env_sample_buffer) // env_sample_buffer.batch_size()
+        dynamics_net_loss_record = -99999
+        for j in range(int(env_buffer_num_batch)):
+            batched_init_state, batched_actions, batched_next_state, \
+            batched_reward = env_sample_buffer.generate_batch_sample(device)
+            predicted_states, predicted_reward = dynamics_net(batched_init_state, batched_actions[:, None])
+            dynamics_net_loss = mse_loss(predicted_states, batched_next_state) + \
+                                mse_loss(predicted_reward, batched_reward)
+
+            optimizer_dynamics.zero_grad()
+            dynamics_net_loss.backward()
+            optimizer_dynamics.step()
+            dynamics_net_loss_record = max(float(dynamics_net_loss.detach()), dynamics_net_loss_record)
+        print("dynamics_net_loss: " + str(dynamics_net_loss_record))
+        # use previous dynamics network if loss is higher;
+        if dynamics_net_loss_record < lowest_dynamic_loss:
+            lowest_dynamic_loss = dynamics_net_loss_record
+            best_dynamics_net.load_state_dict(dynamics_net.state_dict())
+            print("best dynamics state dict loaded!")
+        # env_sample_buffer.empty_buffer()
+
+        with torch.no_grad():
+            for k in range(rollout_times):
+                sampled_state_batch = env_sample_buffer.generate_single_sample(device)[0]
+                sampled_buffer = dynamics_net.rollout_future(rollout_length,
+                                                             torch.tensor(sampled_state_batch).to(device), target_net)
+                env_sample_buffer.integrate_replay_buffers(sampled_buffer, batch_size)
+        train_networks(policy_training_params,
+                       device, env, policy_net, target_net, env_sample_buffer, optimizer_policy)
+        env_sample_buffer.empty_buffer()
+
+
 def train_networks(training_configs, device, env, policy_net, target_net, replay_buffer, optimizer_policy):
     epochs, update_times, update_interval, gather_data, batch_size, decay_factor = training_configs
     best_reward = -99999
@@ -107,9 +150,10 @@ def train_networks(training_configs, device, env, policy_net, target_net, replay
         if mean_reward > best_reward:
             best_reward = mean_reward
         # if mean_reward > 0 or training_epoch % 100 == 0:
-        print("epoch {} with reward {} "
-              "policy_net_loss: {}".format(training_epoch, mean_reward,
-                                           policy_net_loss))
+        if mean_reward > 0:
+            print("epoch {} with reward {} "
+                  "policy_net_loss: {}".format(training_epoch, mean_reward,
+                                               policy_net_loss))
     print(best_reward)
 
 
@@ -130,52 +174,56 @@ def one_epoch_data(batch_size, device, env, policy_net, value_net, trajectory_ti
            torch.stack(approximate_reward_record), torch.tensor(np.array(trajectory_record))
 
 
-class ReplayBuffer:
-    def __init__(self, batch_size):
-        super(ReplayBuffer, self).__init__()
-        self.buffer = []
-        self.batch_size = batch_size
+class DynamicsNetwork(nn.Module):
 
-    def add_sample(self, input_buffer):
-        """
-        :param input_buffer: should be a tuple containing the following:
-        input_buffer[0] gives st, input_buffer[1] gives at, input_buffer[2] gives st',
-        input_buffer[3] gives reward.
-        :return: None
-        """
-        self.buffer.append(input_buffer)
+    def __init__(self, observation_shape, action_embedding_shape, action_input_shape, predict_reward=True):
+        super().__init__()
+        self.observation_shape = observation_shape
+        self.action_embedding_shape = action_embedding_shape
+        self.predict_reward = int(predict_reward)
 
-    def generate_single_sample(self):
-        """
-        generate a random sample from stored replay buffer.
-        :return: a tuple of input_buffer. access those elements in the same way
-        those are passed in for storage.
-        """
-        generator_limit = len(self.buffer) - 1
-        generated_num = random.randint(0, generator_limit)  # realizing random.randint includes both ends!!!
-        return self.buffer[generated_num]
+        self.action_embedding = nn.Linear(action_input_shape, action_embedding_shape)
+        self.input_layer = nn.Linear(observation_shape + action_embedding_shape,
+                                     observation_shape * 2 + action_embedding_shape * 2)
+        self.state_output_layer = nn.Linear(observation_shape * 2 + action_embedding_shape * 2,
+                                            observation_shape + self.predict_reward) # generate an approximated value for current state,
+                            # where the value is a scalar
 
-    def generate_batch_sample(self, device):
-        indexes = random.sample(range(len(self.buffer)), self.batch_size)
-        initial_states = []
-        actions = []
-        next_states = []
-        rewards = []
-        for index in indexes:
-            initial_s, action, next_s, reward = self.buffer[index]
-            initial_states.append(initial_s)
-            actions.append(int(action))
-            next_states.append(next_s)
-            rewards.append(reward)
-        initial_states = torch.Tensor(np.array(initial_states))
-        actions = torch.Tensor(actions)
-        next_states = torch.Tensor(np.array(next_states))
-        rewards = torch.Tensor(rewards)
-        return initial_states.to(device), actions.to(device, dtype=torch.int64), next_states.to(device), rewards.to(
-            device)
+    def forward(self, state, action):
+        """
+        return the predicted state and reward
+        :param state: the current given state; has size [B, observation_shape]
+        :param action: the action executed; has size [B, action_input_shape]
+        :return: tensor representing predicted states and optionally, reward; has size [B, observation_shape + 1]
+                if includes reward, and reward can be acquired using [:, -1] indexing to extract.
+        """
+        if len(action.shape) == 1:
+            # extend dimension of action
+            action = action[:, None]
+        embedded_action = self.action_embedding(action.float())
+        concatenated_input = self.input_layer(torch.cat([state, embedded_action], dim=1))
+        outputs = self.state_output_layer(concatenated_input)
+        return outputs[:, :-1], outputs[:, -1] # observation states, and rewards
 
-    def empty_buffer(self):
-        self.buffer = []
+    @torch.no_grad()
+    def rollout_future(self, rollout_len, initial_state, policy_network):
+        """
+        perform rollouts for future states using the dynamics model.
+        will return a list of tuples, in the form (s, a, s', r), starting from initial state
+        :param rollout_len:
+        :param initial_state: has shape [observation_shape]
+        :param policy_network:
+        :return:
+        """
+        record = ReplayBuffer(1)
+        state = initial_state
+        for i in range(rollout_len):
+            action = policy_network.sample_discrete_action(state)[0]
+            predicted_state, predicted_reward = self.forward(state[None], action[None][None].float())
+            record.add_sample((state.cpu().numpy(), action.cpu().numpy(),
+                               predicted_state[0].cpu().numpy(), predicted_reward.cpu().detach().numpy()[0]))
+            state = predicted_state[0]
+        return record
 
 
 class PolicyNetwork(nn.Module):
@@ -254,8 +302,66 @@ class PolicyNetwork(nn.Module):
         q_value = torch.gather(predicted_values, -1, actions.unsqueeze(-1))  # have size [batch_size, 1]
         return q_value
 
+class ReplayBuffer:
 
-def get_exploration_prob(args, step):
-    # Linear decay of epsilon
-    return args.eps_end + (args.eps_start - args.eps_end) * math.exp(
-        -1.0 * step / args.eps_decay)
+    def __init__(self, batch_size):
+        super(ReplayBuffer, self).__init__()
+        self.buffer = []
+        self._batch_size = batch_size
+
+    def __len__(self):
+        return len(self.buffer)
+
+    def batch_size(self):
+        return self._batch_size
+
+    def add_sample(self, input_buffer):
+        """
+        :param input_buffer: should be a tuple containing the following:
+        input_buffer[0] gives st, input_buffer[1] gives at, input_buffer[2] gives st',
+        input_buffer[3] gives reward.
+        :return: None
+        """
+        self.buffer.append((input_buffer[0].flatten(), input_buffer[1],
+                            input_buffer[2].flatten(), float(input_buffer[3])))
+
+    def generate_single_sample(self, device):
+        """
+        generate a random sample from stored replay buffer.
+        :return: a tuple of input_buffer. access those elements in the same way
+        those are passed in for storage.
+        """
+        generator_limit = len(self.buffer) - 1
+        generated_num = random.randint(0, generator_limit)  # realizing random.randint includes both ends!!!
+        init_state, action, next_state, reward = self.buffer[generated_num]
+        return torch.Tensor(init_state).to(device), torch.Tensor(action).to(device), \
+            torch.Tensor(next_state).to(device), torch.Tensor(np.array([reward])).to(device)
+
+    def generate_batch_sample(self, device):
+        indexes = random.sample(range(len(self.buffer)), self._batch_size)
+        initial_states = []
+        actions = []
+        next_states = []
+        rewards = []
+        for index in indexes:
+            initial_s, action, next_s, reward = self.buffer[index]
+            initial_states.append(initial_s)
+            actions.append(int(action))
+            next_states.append(next_s)
+            rewards.append(reward)
+        initial_states = torch.Tensor(np.array(initial_states))
+        actions = torch.Tensor(actions)
+        next_states = torch.Tensor(np.array(next_states))
+        rewards = torch.Tensor(rewards)
+        return initial_states.to(device), actions.to(device, dtype=torch.int64), next_states.to(device), rewards.to(
+            device)
+
+    def integrate_replay_buffers(self, replay_buffer, batch_size=None):
+        self.buffer.extend(replay_buffer.buffer)
+        if batch_size is not None:
+            self._batch_size = batch_size
+        else:
+            self._batch_size = max(self._batch_size, replay_buffer.batch_size())
+
+    def empty_buffer(self):
+        self.buffer = []

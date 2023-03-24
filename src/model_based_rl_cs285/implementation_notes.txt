@@ -1,0 +1,32 @@
+always realize that for any reinforcement learning algorithms, the procedures would be performed as follows:
+1: generate samples
+2: fit the model for those samples; 
+3: update models.
+
+And above is a recursive process. 
+
+# note to the package gymnasium: 
+- this is a forked package from OpenAI's gym package (which was also being installed on my computer, but due to it's using mujoco-py package, and I was facing troubles installing that, I quit using "gym"), which requires "mujoco" package, and seems like the environment to be working properly. 
+- https://pypi.org/project/gymnasium/ provides an easy-to-use example for acquiring samples from simulated environment. 
+
+# model based rl mechanisms:
+https://github.com/facebookresearch/mbrl-lib
+above is a quite useful implementation that might be useful to be referenced.
+Realizing the environment dynamics in above code repo also predicts output reward.
+
+The latest version of MBRL in lecture slides shows learning a dynamic models is useful for accelerating the training
+processes for training model-free reinforcement learning algorithms, and might also be useful for
+offline learning when gathered data and trained an environment dynamics.
+the training mechanism seems to use both the environment data and the dynamic model's predicted data for
+updating the policy, which could be interpreted as ... adding another simple interface that also allows
+collecting data from trained dynamic model??? Emmm... sounds like an unnecessary behaviour, unless it's used
+for offline learning (which I think is also mentioned in slides), that uses a dynamic model to simulate the environment,
+allowing data to be gathered not only from datasets, but also random transitions from dynamic models?
+
+Therefore should adopt version 3.0 of MBRL as final algorithm, introduced in lecture 12.
+if that is the case, should first use policy to sample a set of transition datapoints and store them;
+then train a dynamic model taking in an action and current state to predict next state.
+Then perform state rollout using trained dynamics model. Realizing the learned dynamics model is used to
+train the policy, so itself doesn't need to provide the optimal actions given its environment dynamics.
+
+
