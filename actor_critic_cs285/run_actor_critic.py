@@ -1,7 +1,7 @@
 import gymnasium as gym
 import torch
 from torch import optim
-import reinforcement_learning_practise.src.actor_critic_cs285.actor_critic as run_file
+import reinforcement_learning_practise.actor_critic_cs285.actor_critic as run_file
 
 env = gym.make("LunarLander-v2")  # discrete action space
 # env = gym.make('LunarLanderContinuous-v2') # this environment has both states and actions being continuous

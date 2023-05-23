@@ -1,12 +1,7 @@
-import numpy as np
 import gymnasium as gym
 import torch
-from torch import nn, optim
-from torch.nn.functional import mse_loss, cross_entropy
-from tqdm import tqdm
-import random
-from torch.distributions import Categorical
-import reinforcement_learning_practise.src.policy_gradient_cs285.policy_gradient as run_file
+from torch import optim
+import reinforcement_learning_practise.policy_gradient_cs285.policy_gradient as run_file
 
 
 env = gym.make("LunarLander-v2")  # discrete action space

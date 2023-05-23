@@ -1,12 +1,7 @@
-import numpy as np
 import gymnasium as gym
 import torch
-from torch import nn, optim
-from torch.nn.functional import mse_loss, cross_entropy
-from tqdm import tqdm
-import random
-from torch.distributions import Categorical, Normal
-import reinforcement_learning_practise.src.q_network_cs285.q_network as run_file
+from torch import optim
+import reinforcement_learning_practise.q_network_cs285.q_network as run_file
 
 env = gym.make("LunarLander-v2")  # discrete action space
 # env = gym.make('LunarLanderContinuous-v2') # this environment has both states and actions being continuous

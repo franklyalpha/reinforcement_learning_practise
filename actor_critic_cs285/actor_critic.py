@@ -115,33 +115,6 @@ def one_epoch_data(batch_size, device, env, policy_net, value_net, trajectory_ti
            torch.stack(approximate_reward_record), torch.tensor(np.array(trajectory_record))
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env_id", type=str, default="LunarLander-v2")
-    parser.add_argument("--total_timesteps", type=int, default=500_000)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--buffer_size", type=int, default=25_000)
-    parser.add_argument("--learning_rate", type=float, default=3e-4)
-    parser.add_argument("--list_layer", nargs="+", type=int, default=[64, 64])
-    parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--tau", type=float, default=0.005)
-    parser.add_argument("--eps_end", type=float, default=0.05)
-    parser.add_argument("--eps_start", type=int, default=1)
-    parser.add_argument("--eps_decay", type=int, default=50_000)
-    parser.add_argument("--learning_start", type=int, default=10_000)
-    parser.add_argument("--train_frequency", type=int, default=10)
-    parser.add_argument("--cpu", action="store_true")
-    parser.add_argument("--capture_video", action="store_true")
-    parser.add_argument("--seed", type=int, default=0)
-
-    args = parser.parse_args()
-
-    args.device = torch.device(
-        "cpu" if args.cpu or not torch.cuda.is_available() else "cuda")
-
-    return args
-
-
 class ValueNetwork(nn.Module):
 
     def __init__(self, observation_shape, ):

@@ -1,9 +1,7 @@
 import gymnasium as gym
 import torch
-import torch.nn as nn
-from torch.nn.functional import mse_loss, cross_entropy
 from torch import optim
-import reinforcement_learning_practise.src.model_based_rl_cs285.model_based as run_file
+import reinforcement_learning_practise.model_based_rl_cs285.model_based as run_file
 
 env = gym.make("LunarLander-v2")  # discrete action space
 # env = gym.make('LunarLanderContinuous-v2') # this environment has both states and actions being continuous
