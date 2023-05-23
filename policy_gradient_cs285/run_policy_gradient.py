@@ -19,7 +19,7 @@ policy_net = run_file.PolicyNetwork(state_shape, action_shape)
 policy_net.to(device)
 optimizer = optim.Adam(policy_net.parameters(), lr=0.001)
 
-epochs, batch_size, trajectory_time = 200, 50, 200  # just for debug. need to modify to other values when simple running works.
+epochs, batch_size, trajectory_time = 200 + 1, 2, 200  # just for debug. need to modify to other values when simple running works.
 reward_decay_factor = 0.99
 
 run_file.train_policy_network((epochs, batch_size, trajectory_time, reward_decay_factor),

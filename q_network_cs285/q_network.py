@@ -106,10 +106,10 @@ def train_networks(training_configs, device, env, policy_net, target_net, replay
         policy_net_loss /= (update_interval * update_times)
         if mean_reward > best_reward:
             best_reward = mean_reward
-        # if mean_reward > 0 or training_epoch % 100 == 0:
-        print("epoch {} with reward {} "
-              "policy_net_loss: {}".format(training_epoch, mean_reward,
-                                           policy_net_loss))
+        if mean_reward > 0 or training_epoch % 100 == 0:
+            print("epoch {} with reward {} "
+                  "policy_net_loss: {}".format(training_epoch, mean_reward,
+                                               policy_net_loss))
     print(best_reward)
 
 
