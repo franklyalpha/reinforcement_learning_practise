@@ -1,10 +1,6 @@
 import argparse
 import math
 import random
-import time
-from collections import deque, namedtuple
-from datetime import datetime
-from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
@@ -40,7 +36,7 @@ def one_trajectory(env, trajectory_time, policy_net, value_net, device):
             # print("terminated at time {}".format(i))
     log_probs_tensor = torch.cat(log_probs)
     approximate_rewards = torch.cat(approximate_rewards)
-        # stack automatically adds a new dimension, and preserves gradient
+    # stack automatically adds a new dimension, and preserves gradient
     env.reset()  # always reset before performing next trajectory.
     return trajectories, rewards, approximate_rewards, log_probs_tensor
 
@@ -62,7 +58,7 @@ def train_networks(training_configs, device, env, policy_net, value_net, optimiz
     for training_epoch in range(epochs):
         log_probs_record, reward_record, approximate_reward_record, \
         states_record = one_epoch_data(batch_size, device, env,
-                                                policy_net, value_net, trajectory_time)
+                                       policy_net, value_net, trajectory_time)
 
         gt_reward_record = reward_to_go_calculation(reward_decay_factor,
                                                     trajectory_time, reward_record).to(device)
@@ -77,10 +73,11 @@ def train_networks(training_configs, device, env, policy_net, value_net, optimiz
 
         # now start fitting policy net
         # first calculate A value;
-        a_value = value_net(states_record.to(device)).flatten(-2, -1) # use updated value_net to acquire new reward
-                                    # for each sampled states
+        a_value = value_net(states_record.to(device)).flatten(-2, -1)  # use updated value_net to acquire new reward
+        # for each sampled states
         a_value = reward_record.to(device) + torch.concatenate((a_value[:, 1:],
-                                    torch.zeros([batch_size, 1]).to(device)), dim=1) - a_value
+                                                                torch.zeros([batch_size, 1]).to(device)),
+                                                               dim=1) - a_value
         policy_net_loss = torch.sum((-1) * (torch.cat(log_probs_record)) * a_value)
         optimizer_policy.zero_grad()
         policy_net_loss.backward()
@@ -121,8 +118,8 @@ class ValueNetwork(nn.Module):
         super().__init__()
         self.observation_shape = observation_shape
         self.input_layer = nn.Linear(observation_shape, observation_shape * 2)
-        self.output_layer = nn.Linear(observation_shape * 2, 1) # generate an approximated value for current state,
-                            # where the value is a scalar
+        self.output_layer = nn.Linear(observation_shape * 2, 1)  # generate an approximated value for current state,
+        # where the value is a scalar
 
     def forward(self, state):
         """
@@ -154,14 +151,14 @@ class PolicyNetwork(nn.Module):
         """
         x = self.input_layer(state)
 
-        #relu activation
+        # relu activation
         x = nn.ReLU()(x)
 
         x = self.intermediate_layer(x)
 
         x = nn.ReLU()(x)
 
-        #actions
+        # actions
         actions = self.output_layer(x)
         return actions
 
@@ -201,4 +198,3 @@ def get_exploration_prob(args, step):
     # Linear decay of epsilon
     return args.eps_end + (args.eps_start - args.eps_end) * math.exp(
         -1.0 * step / args.eps_decay)
-

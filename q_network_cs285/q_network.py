@@ -1,7 +1,7 @@
 import argparse
 import math
 import random
-import time
+
 
 import gymnasium as gym
 import numpy as np
@@ -12,10 +12,6 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 from torch.distributions import Categorical, Normal
 
-
-# from collections import deque, namedtuple
-# from datetime import datetime
-# from pathlib import Path
 
 def sample_datapoints(target_net, sample_data_count, replay_buffer, env, device):
     states, _ = env.reset()
@@ -32,46 +28,6 @@ def sample_datapoints(target_net, sample_data_count, replay_buffer, env, device)
         states = updated_state
 
 
-# run below lines for initializing python console.
-def one_trajectory(env, trajectory_time, policy_net, value_net, device):
-    trajectories = []
-    rewards = []
-    approximate_rewards = []
-    log_probs = []
-    prev_state = torch.from_numpy(env.reset()[0]).to(device)
-    for i in range(trajectory_time):
-        action, log_prob = policy_net.sample_discrete_action(prev_state)
-        action_numpy = action.cpu().numpy()
-        trajectories.append(prev_state.cpu().numpy())
-        # realize log_prob is used for calculating gradient, cannot convert to numpy object!
-        log_probs.append(log_prob[None])
-        updated_state, reward, terminated, truncated, info = env.step(
-            action_numpy)
-        rewards.append(reward)
-        prev_state = torch.from_numpy(updated_state).to(device)
-        approximate_reward = value_net(prev_state)
-        approximate_rewards.append(approximate_reward)
-        if terminated:
-            torch.from_numpy(env.reset()[0]).to(device)
-            # print("terminated at time {}".format(i))
-    log_probs_tensor = torch.cat(log_probs)
-    approximate_rewards = torch.cat(approximate_rewards)
-    # stack automatically adds a new dimension, and preserves gradient
-    env.reset()  # always reset before performing next trajectory.
-    return trajectories, rewards, approximate_rewards, log_probs_tensor
-
-
-def reward_to_go_calculation(reward_decay_factor, trajectory_time, reward_record):
-    reward_decay_tensor = torch.from_numpy(np.array([reward_decay_factor ** i
-                                                     for i in range(trajectory_time)])[None])
-    # now perform reward cum_sum;
-    reward_to_go = torch.zeros_like(reward_record)
-    for i in range(trajectory_time - 1, -1, -1):
-        reward_to_go[:, i] = torch.sum(reward_decay_tensor[:, :trajectory_time - i]
-                                       * reward_record[:, i:], dim=1)
-    return reward_to_go
-
-
 def train_networks(training_configs, device, env, policy_net, target_net, replay_buffer, optimizer_policy):
     epochs, update_times, update_interval, gather_data, batch_size, decay_factor = training_configs
     best_reward = -99999
@@ -83,8 +39,8 @@ def train_networks(training_configs, device, env, policy_net, target_net, replay
         reward_record = 0
         policy_net_loss = 0
         for j in range(update_times):
-            target_net.load_state_dict(
-                policy_net.state_dict())  # realizing the returned values are immutable; don't worry about co-update issues.
+            target_net.load_state_dict(policy_net.state_dict())
+            # realizing the returned values are immutable; don't worry about co-update issues.
             for k in range(update_interval):
                 # calculate loss, by randomly picking up a sample from buffer.
                 s, a, sp, r = replay_buffer.generate_batch_sample(device)
@@ -111,23 +67,6 @@ def train_networks(training_configs, device, env, policy_net, target_net, replay
                   "policy_net_loss: {}".format(training_epoch, mean_reward,
                                                policy_net_loss))
     print(best_reward)
-
-
-def one_epoch_data(batch_size, device, env, policy_net, value_net, trajectory_time):
-    trajectory_record = []
-    reward_record = []
-    approximate_reward_record = []
-    log_probs_record = []
-    for batch in range(batch_size):
-        trajectories, rewards, approximate_rewards, log_probs = one_trajectory(
-            env, trajectory_time, policy_net, value_net, device)
-        trajectory_record.append(trajectories)
-        reward_record.append(rewards)
-        approximate_reward_record.append(approximate_rewards)
-        log_probs_record.append(log_probs[None])
-
-    return log_probs_record, torch.Tensor(reward_record), \
-           torch.stack(approximate_reward_record), torch.tensor(np.array(trajectory_record))
 
 
 class ReplayBuffer:

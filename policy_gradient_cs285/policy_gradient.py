@@ -92,9 +92,10 @@ def train_policy_network(training_configs, device, env, policy_net, optimizer):
         reward_record = torch.from_numpy(np.array(reward_record))
         # implement reward to go, with delayed rewards
         reward_to_go = reward_to_go_calculation(reward_decay_factor, trajectory_time, reward_record)
+        reward_baseline = reward_to_go - torch.mean(reward_to_go, dim=1, keepdim=True)  # for training stabilization
         # del trajectories, rewards, log_probs
         # now start calculating gradient
-        gradient = torch.sum(-log_probs_record * reward_to_go.to(device)) / batch_size
+        gradient = torch.sum(-log_probs_record * reward_baseline.to(device)) / batch_size
         # never forget the negative sign!!!
         optimizer.zero_grad()
         gradient.backward()
